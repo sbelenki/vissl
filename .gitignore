@@ -1,0 +1,8 @@
+__pycache__
+
+# PyCharm IDE
+.idea/
+
+checkpoints/
+
+*.egg-info/

@@ -1,0 +1,159 @@
+# @package _global_
+config:
+  VERBOSE: False
+  LOG_FREQUENCY: 1
+  TEST_ONLY: False
+  TEST_EVERY_NUM_EPOCH: 1
+  TEST_MODEL: True
+  SEED_VALUE: 0
+  MULTI_PROCESSING_METHOD: forkserver
+  HOOKS:
+    PERF_STATS:
+      MONITOR_PERF_STATS: True
+    MODEL_COMPLEXITY:
+      COMPUTE_COMPLEXITY: False
+  DATA:
+    NUM_DATALOADER_WORKERS: 0
+    KEY: "reconstruction_esc"
+    INDEX: 12
+    TRAIN:
+      DATA_SOURCES: [fastmri]
+      DATA_PATHS: ["/mnt/d/data"] # /home/ec2-user/mri
+      BATCHSIZE_PER_REPLICA: 2
+      LABEL_TYPE: sample_index
+      TRANSFORMS:
+        - name: SpatialToFrequency
+        - name: ApplyFrequencyMask
+          mask_type: "random"
+          center_fractions: [0.04]
+          accelerations: [8]
+        - name: FrequencyToSpatial
+        - name: ImgPilToPatchesAndImage
+          crop_scale_image: [0.08, 1.0]   # default PyTorch
+          crop_size_image: 224            # default PyTorch
+          crop_scale_patches: [0.6, 1.0]
+          crop_size_patches: 255          # default Jigsaw
+          num_patches: 9
+        - name: RandomHorizontalFlip
+        - name: ToTensor
+        - name: Normalize
+          mean: [0.5, 0.5, 0.5]
+          std: [0.225, 0.225, 0.225]
+        - name: ToOneChannelTensor
+      COLLATE_FUNCTION: "patch_and_image_collator"
+      INPUT_KEY_NAMES: ["patches", "images"] # keys produced by data that are `inputs' to the model
+      MMAP_MODE: True
+      DATA_LIMIT: 4
+      COPY_TO_LOCAL_DISK: False
+    TEST:
+      DATA_SOURCES: [fastmri]
+      DATA_PATHS: ["/mnt/d/data"] # /home/ec2-user/mri
+      BATCHSIZE_PER_REPLICA: 2
+      LABEL_TYPE: sample_index
+      TRANSFORMS:
+        - name: SpatialToFrequency
+        - name: ApplyFrequencyMask
+          mask_type: "random"
+          center_fractions: [0.04]
+          accelerations: [8]
+        - name: FrequencyToSpatial
+        - name: ImgPilToPatchesAndImage
+          crop_scale_image: [0.08, 1.0]   # default PyTorch
+          crop_size_image: 224            # default PyTorch
+          crop_scale_patches: [0.6, 1.0]
+          crop_size_patches: 255          # default Jigsaw
+          num_patches: 9
+        - name: RandomHorizontalFlip
+        - name: ToTensor
+        - name: Normalize
+          mean: [0.5, 0.5, 0.5]
+          std: [0.225, 0.225, 0.225]
+        - name: ToOneChannelTensor
+      COLLATE_FUNCTION: "patch_and_image_collator"
+      INPUT_KEY_NAMES: ["patches", "images"] # keys produced by data that are `inputs' to the model
+      MMAP_MODE: True
+      DATA_LIMIT: 4
+      COPY_TO_LOCAL_DISK: False
+  TRAINER:
+    TRAIN_STEP_NAME: standard_train_step
+  METERS:
+    name: ""
+  MODEL:
+    TRUNK:
+      NAME: unet
+      TRUNK_PARAMS:
+        UNET:
+          IN_CHANNELS: 1
+          OUT_CHANNELS: 1
+          CHANNELS: 32
+          NUM_POOLS_LAYERS: 4
+          DROP_PROBABILITY: 0.0
+    MULTI_INPUT_HEAD_MAPPING: [
+        # "flatten" is the res5->avg->flatten feature from ResNet50
+        ["patches", ["flatten"]], # feature layer to extract from second input "patches"
+        ["images", ["flatten"]],  # feature layer to extract from first input "images"
+    ]
+    HEAD:
+      PARAMS: [
+        # head 0 that operates on `patches`
+        [
+            ["mlp", {"dims": [4096, 128], "use_bn": False, "use_relu": False}],
+            ["siamese_concat_view", {"num_towers": 9}],
+            ["mlp", {"dims": [1152, 128]}],
+        ],
+        # head 1 that operates on `images`. Linear projection.
+        [
+            ["mlp", {"dims": [50176, 128]}]
+        ],
+      ]
+  LOSS:
+    name: nce_loss_with_memory
+    nce_loss_with_memory:
+      ignore_index: -1
+      norm_embedding: True
+      temperature: 0.07
+      loss_weights: [0.5, 0.5]  # relative weight of Patches=>Mem and Images=>Mem
+      norm_constant: -1
+      negative_sampling_params:
+        num_negatives: 32000
+        type: random
+      memory_params:
+        memory_size: -1 # auto_filled as num_train_samples
+        embedding_dim: 128
+        momentum: 0.5
+        norm_init: True
+        update_mem_on_forward: False
+      update_mem_with_emb_index: 1
+      num_train_samples: 1281167
+  OPTIMIZER:
+      name: sgd
+      weight_decay: 0.0001
+      momentum: 0.9
+      # num_epochs: 200
+      nesterov: False
+      num_epochs: 5
+      regularize_bn: False
+      regularize_bias: False
+      param_schedulers:
+        lr:
+          auto_lr_scaling:
+            auto_scale: true
+            base_value: 0.03
+            base_lr_batch_size: 256
+          name: cosine
+          start_value: 0.012   # LR for batch size 256*4
+          end_value: 0.00012
+          update_interval: epoch
+  DISTRIBUTED:
+    BACKEND: gloo
+    NUM_NODES: 1
+    NUM_PROC_PER_NODE: 1 # 1 GPU
+    INIT_METHOD: tcp
+    RUN_ID: auto
+  MACHINE:
+    DEVICE: cpu
+  CHECKPOINT:
+    DIR: "./checkpoints_pirl_test"
+    AUTO_RESUME: True
+    CHECKPOINT_FREQUENCY: 1
+    OVERWRITE_EXISTING: true

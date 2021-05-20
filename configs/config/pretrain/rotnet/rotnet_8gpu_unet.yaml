@@ -1,0 +1,112 @@
+# @package _global_
+config:
+  VERBOSE: False
+  LOG_FREQUENCY: 100
+  TEST_ONLY: False
+  TEST_EVERY_NUM_EPOCH: 5
+  TEST_MODEL: True
+  SEED_VALUE: 1
+  MULTI_PROCESSING_METHOD: forkserver
+  HOOKS:
+    PERF_STATS:
+      MONITOR_PERF_STATS: False
+  DATA:
+    NUM_DATALOADER_WORKERS: 4
+    KEY: "reconstruction_esc"
+    TRAIN:
+      DATA_SOURCES: [fastmri]
+      DATA_PATHS: ["/home/ec2-user/mri"]
+      BATCHSIZE_PER_REPLICA: 2
+      TRANSFORMS:
+        - name: ImgRotatePil
+        - name: SpatialToFrequency
+        - name: ApplyFrequencyMask
+          mask_type: "random"
+          center_fractions: [0.04]
+          accelerations: [4]
+        - name: FrequencyToSpatial
+        - name: RandomResizedCrop
+          size: 320
+        - name: RandomHorizontalFlip
+        - name: ToTensor
+        - name: Normalize
+          mean: [0.485, 0.456, 0.406]
+          std: [0.229, 0.224, 0.225]
+        - name: ToOneChannelTensor
+      MMAP_MODE: True
+      COPY_TO_LOCAL_DISK: False
+    TEST:
+      DATA_SOURCES: [fastmri]
+      DATA_PATHS: ["/home/ec2-user/mri"]
+      BATCHSIZE_PER_REPLICA: 32
+      TRANSFORMS:
+        - name: ImgRotatePil
+        - name: SpatialToFrequency
+        - name: ApplyFrequencyMask
+          mask_type: "random"
+          center_fractions: [0.04]
+          accelerations: [4]
+        - name: FrequencyToSpatial
+        - name: Resize
+          size: 320
+        - name: CenterCrop
+          size: 320
+        - name: ToTensor
+        - name: Normalize
+          mean: [0.485, 0.456, 0.406]
+          std: [0.229, 0.224, 0.225]
+        - name: ToOneChannelTensor
+      MMAP_MODE: True
+      COPY_TO_LOCAL_DISK: False
+  METERS:
+    name: accuracy_list_meter
+    accuracy_list_meter:
+      num_meters: 1
+      topk_values: [1]
+  TRAINER:
+    TRAIN_STEP_NAME: standard_train_step
+  MODEL:
+    TRUNK:
+      NAME: unet
+      TRUNK_PARAMS:
+        UNET:
+          IN_CHANNELS: 1
+          OUT_CHANNELS: 1
+          CHANNELS: 64
+          NUM_POOLS_LAYERS: 4
+          DROP_PROBABILITY: 0.0
+    HEAD:
+      PARAMS: [["mlp", {"dims": [102400, 4]}]]
+  LOSS:
+      name: cross_entropy_multiple_output_single_target
+      ignore_index: -1
+  OPTIMIZER:
+      name: adam
+      lr: 0.001
+      weight_decay: 0
+      num_epochs: 100
+      regularize_bn: False
+      regularize_bias: False
+      param_schedulers:
+        lr:
+          auto_lr_scaling:
+            auto_scale: false
+            base_value: 0.03
+            base_lr_batch_size: 256
+          name: cosine
+          start_value: 0.12   # LR for batch size 256*4
+          end_value: 0.00012
+          update_interval: epoch
+  DISTRIBUTED:
+    BACKEND: nccl
+    NUM_NODES: 1
+    NUM_PROC_PER_NODE: 4
+    INIT_METHOD: tcp
+    RUN_ID: auto
+  MACHINE:
+    DEVICE: gpu
+  CHECKPOINT:
+    DIR: "./checkpoints_rotnet"
+    AUTO_RESUME: True
+    CHECKPOINT_FREQUENCY: 100
+    OVERWRITE_EXISTING: True

@@ -1,0 +1,16 @@
+# @package _global_
+config:
+  MODEL:
+    TRUNK:
+      NAME: unet  # This could be overriden by command line to be regnet_fsdp
+      TRUNK_PARAMS:
+        UNET:
+          IN_CHANNELS: 2
+          OUT_CHANNELS: 2
+          CHANNELS: 32
+          NUM_POOLS_LAYERS: 4
+          DROP_PROBABILITY: 0.0
+    HEAD:
+      PARAMS: [
+        ["swav_head", {"dims": [3024, 3024, 128], "use_bn": False, "num_clusters": [3000]}],
+      ]
